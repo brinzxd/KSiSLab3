@@ -1,8 +1,5 @@
 """
 client.py — запуск клиента чата.
-
-Использование:
-    python client.py
 """
 
 import socket
@@ -18,30 +15,25 @@ from common import (
 )
 
 
-# ──────────────────────────────────────────────────────────────
-# Главное окно клиента (чат)
-# ──────────────────────────────────────────────────────────────
-
 class ClientChatWindow(tk.Tk):
-    def __init__(self, host: str, port: int, nickname: str):
+    def __init__(self, host: str, port: int, nickname: str, bind_ip: str = ""):  # ← ИЗМЕНЕНО: добавлен bind_ip
         super().__init__()
-        self.title(f"Socket Chat — КЛИЕНТ  [{host}:{port}]")
+        self.title(f"Socket Chat — КЛИЕНТ [{host}:{port}]")
         self.configure(bg=DARK_BG)
         self.geometry("820x620")
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.nickname = nickname
-        self.host     = host
-        self.port     = port
-        self.running  = True
+        self.host = host
+        self.port = port
+        self.bind_ip = bind_ip  # ← НОВОЕ
+        self.running = True
         self.sock: socket.socket | None = None
         self.q: queue.Queue = queue.Queue()
 
         self._build_ui()
         threading.Thread(target=self._connect, daemon=True).start()
         self._poll()
-
-    # ── UI ──────────────────────────────────────────────────
 
     def _build_ui(self):
         header = tk.Frame(self, bg=PANEL_BG, height=52)
@@ -59,16 +51,15 @@ class ClientChatWindow(tk.Tk):
         self.chat = ChatFrame(self, self._send_message)
         self.chat.pack(fill=tk.BOTH, expand=True)
 
-    # ── сетевая часть ───────────────────────────────────────
-
     def _connect(self):
         try:
             self.sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            if self.bind_ip:                        # ← НОВОЕ
+                self.sock.bind((self.bind_ip, 0))   # ← НОВОЕ: 0 = автовыбор порта
             self.sock.connect((self.host, self.port))
-            # представиться серверу
             send_msg(self.sock, self.nickname)
             self.q.put(("status", f"подключён к {self.host}:{self.port}"))
-            self.q.put(("sys",    f"Добро пожаловать, {self.nickname}!"))
+            self.q.put(("sys", f"Добро пожаловать, {self.nickname}!"))
             self._recv_loop()
         except OSError as e:
             self.q.put(("error", str(e)))
@@ -96,8 +87,6 @@ class ClientChatWindow(tk.Tk):
         except OSError as e:
             self.chat.sys_msg(f"Ошибка отправки: {e}")
 
-    # ── poll (очередь → UI) ─────────────────────────────────
-
     def _poll(self):
         try:
             while True:
@@ -113,9 +102,7 @@ class ClientChatWindow(tk.Tk):
                 elif kind == "status_err":
                     self.status_lbl.config(text=item[1], fg="#ff4466")
                 elif kind == "error":
-                    self.status_lbl.config(
-                        text=f"ошибка подключения", fg="#ff4466"
-                    )
+                    self.status_lbl.config(text="ошибка подключения", fg="#ff4466")
                     self.chat.sys_msg(f"Не удалось подключиться: {item[1]}")
         except Exception:
             pass
@@ -131,10 +118,6 @@ class ClientChatWindow(tk.Tk):
                 pass
         self.destroy()
 
-
-# ──────────────────────────────────────────────────────────────
-# Окно настроек перед подключением
-# ──────────────────────────────────────────────────────────────
 
 class ClientSetupWindow(tk.Tk):
     def __init__(self):
@@ -156,12 +139,14 @@ class ClientSetupWindow(tk.Tk):
         self.nick_var = tk.StringVar(value="Пользователь")
         self.host_var = tk.StringVar(value="127.0.0.1")
         self.port_var = tk.StringVar(value="9000")
+        self.bind_var = tk.StringVar(value="")  # ← НОВОЕ
 
-        labeled_entry(self, "Никнейм:",    self.nick_var)
+        labeled_entry(self, "Никнейм:", self.nick_var)
         labeled_entry(self, "IP сервера:", self.host_var)
-        labeled_entry(self, "Порт:",       self.port_var)
+        labeled_entry(self, "Порт:", self.port_var)
+        labeled_entry(self, "Bind IP (opt):", self.bind_var)  # ← НОВОЕ
 
-        btn = tk.Button(self, text="▶  ПОДКЛЮЧИТЬСЯ", command=self._launch)
+        btn = tk.Button(self, text="▶ ПОДКЛЮЧИТЬСЯ", command=self._launch)
         style_btn(btn, accent=False)
         btn.pack(pady=(20, 30), padx=32, fill=tk.X)
 
@@ -175,12 +160,11 @@ class ClientSetupWindow(tk.Tk):
 
         host = self.host_var.get().strip() or "127.0.0.1"
         nick = self.nick_var.get().strip() or "Аноним"
+        bind_ip = self.bind_var.get().strip()  # ← НОВОЕ
 
         self.destroy()
-        ClientChatWindow(host, port, nick).mainloop()
+        ClientChatWindow(host, port, nick, bind_ip).mainloop()  # ← ИЗМЕНЕНО
 
-
-# ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
     ClientSetupWindow().mainloop()
